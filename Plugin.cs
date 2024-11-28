@@ -4,6 +4,7 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using GameNetcodeStuff;
 using HarmonyLib;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ButlerSettings
@@ -12,8 +13,9 @@ namespace ButlerSettings
     [BepInDependency(LETHAL_CONFIG, BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
     {
-        const string PLUGIN_GUID = "dopadream.lethalcompany.ButlerSettings", PLUGIN_NAME = "Butler Settings", PLUGIN_VERSION = "1.0.0", LETHAL_CONFIG = "ainavt.lc.lethalconfig";
+        const string PLUGIN_GUID = "dopadream.lethalcompany.ButlerSettings", PLUGIN_NAME = "Butler Settings", PLUGIN_VERSION = "1.0.1", LETHAL_CONFIG = "ainavt.lc.lethalconfig";
         internal static new ManualLogSource Logger;
+        internal static Dictionary<string, EnemyType> allEnemiesList = [];
         internal static ConfigEntry<int> configMaxCount, configPowerLevel, configDamage, configHealthMultiplayer, configHealthSingleplayer;
         internal static ConfigEntry<float> configAttackCooldown;
 
@@ -73,13 +75,43 @@ namespace ButlerSettings
             [HarmonyPostfix]
             static void ButlerStartPostFix(ButlerEnemyAI __instance)
             {
-                __instance.enemyType.MaxCount = configMaxCount.Value;
                 __instance.enemyHP = configHealthMultiplayer.Value;
 
                 if (StartOfRound.Instance.connectedPlayersAmount == 0)
                 {
                     __instance.enemyHP = configHealthSingleplayer.Value;
                 }
+            }
+
+            [HarmonyPatch(typeof(QuickMenuManager), "Start")]
+            [HarmonyPostfix]
+
+            static void QuickMenuManagerPostStart(QuickMenuManager __instance)
+            {
+                allEnemiesList.Clear();
+                List<SpawnableEnemyWithRarity>[] allEnemyLists =
+                [
+                    __instance.testAllEnemiesLevel.Enemies
+                ];
+
+                    foreach (List<SpawnableEnemyWithRarity> enemies in allEnemyLists)
+                        foreach (SpawnableEnemyWithRarity spawnableEnemyWithRarity in enemies)
+                        {
+                            if (allEnemiesList.ContainsKey(spawnableEnemyWithRarity.enemyType.name))
+                            {
+                                if (allEnemiesList[spawnableEnemyWithRarity.enemyType.name] == spawnableEnemyWithRarity.enemyType)
+                                    Plugin.Logger.LogWarning($"allEnemiesList: Tried to cache reference to \"{spawnableEnemyWithRarity.enemyType.name}\" more than once");
+                                else
+                                    Plugin.Logger.LogWarning($"allEnemiesList: Tried to cache two different enemies by same name ({spawnableEnemyWithRarity.enemyType.name})");
+                            }
+                            else if (spawnableEnemyWithRarity.enemyType.enemyName == "Butler")
+                            {
+                                spawnableEnemyWithRarity.enemyType.MaxCount = configMaxCount.Value;
+                                spawnableEnemyWithRarity.enemyType.PowerLevel = configPowerLevel.Value;
+                                Logger.LogDebug("Butler spawn settings overriden!");
+                                return;
+                            }
+                        }
             }
 
             [HarmonyPatch(typeof(ButlerEnemyAI), nameof(ButlerEnemyAI.OnCollideWithPlayer))]
